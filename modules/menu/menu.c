@@ -495,7 +495,8 @@ static void invite_handler(void *arg)
 		return;
 
 	int err;
-	err = ua_connect(uag_find_requri(uri), NULL, NULL, uri, VIDMODE_ON);
+	err = ua_connect_dir(uag_find_requri(uri), NULL, NULL, uri, VIDMODE_ON,
+			     menu.invite_adir, menu.invite_vdir);
 	if (err)
 		warning("menu: call to %s failed (%m)\n", menu.invite_uri,
 			err);
@@ -504,13 +505,22 @@ static void invite_handler(void *arg)
 }
 
 
-static void menu_invite(const char *prm)
+static void menu_invite(const char *prm, struct call *call)
 {
 	menu.invite_uri = mem_deref(menu.invite_uri);
 	int err = str_dup(&menu.invite_uri, prm);
 	if (err) {
 		warning("menu: call to %s failed (%m)\n", prm, err);
 		return;
+	}
+
+	if (call) {
+		call_get_media_estdir(call, &menu.invite_adir,
+				      &menu.invite_vdir);
+	}
+	else {
+		menu.invite_adir = SDP_SENDRECV;
+		menu.invite_vdir = SDP_SENDRECV;
 	}
 
 	tmr_start(&menu.tmr_invite, 0, invite_handler, NULL);
@@ -699,7 +709,7 @@ static void event_handler(enum bevent_ev ev, struct bevent *event, void *arg)
 	enum sdp_dir ardir, vrdir;
 	uint32_t count;
 	struct pl val;
-	char * uri;
+	const char * uri;
 	const char           *prm  = bevent_get_text(event);
 	struct call          *call = bevent_get_call(event);
 	struct ua            *ua   = bevent_get_ua(event);
@@ -948,7 +958,7 @@ static void event_handler(enum bevent_ev ev, struct bevent *event, void *arg)
 		++uri;
 		if (account_sip_autoredirect(ua_account(ua))) {
 			info("menu: redirecting call to %s\n", uri);
-			menu_invite(uri);
+			menu_invite(uri, call);
 		}
 		else {
 			info("menu: redirect call to %s\n", uri);
@@ -963,7 +973,7 @@ static void event_handler(enum bevent_ev ev, struct bevent *event, void *arg)
 		(void)cparam_decode(prm, "method", &val);
 		if (!pl_strcmp(&val, "invite")) {
 			info("menu: incoming REFER to %s\n", prm);
-			menu_invite(prm);
+			menu_invite(prm, NULL);
 		}
 
 		break;
@@ -1249,6 +1259,8 @@ static int module_init(void)
 	menu.play = NULL;
 	menu.adelay = -1;
 	menu.message_tone = true;
+	menu.invite_adir = SDP_SENDRECV;
+	menu.invite_vdir = SDP_SENDRECV;
 	err = odict_alloc(&menu.ovaufile, 8);
 	if (err)
 		return err;
